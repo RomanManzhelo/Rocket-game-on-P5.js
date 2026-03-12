@@ -3,7 +3,9 @@ let gameOver = false;
 let rocket;
 let rocketImg;
 let score = 0;
-
+let mic;
+let volume = 0;
+let micStarted = false;
 
 let groundHeight = 150;
 let groundColor;
@@ -23,10 +25,16 @@ function setup() {
   createCanvas(400, 700);
   groundY = height - groundHeight;
   groundColor = color(34, 139, 34); 
-  rocket = new Rocket(width / 2, groundY + groundHeight);
+  rocket = new Rocket(width / 2, groundY - 25);
+  
+  mic = new p5.AudioIn();
+  mic.start();
 }
 
 function draw() {
+  // get volume
+  volume = mic.getLevel();
+  
   // background
   let altitude = groundY - rocket.y;
   let skyColor = lerpColor(
@@ -36,10 +44,20 @@ function draw() {
   );
   background(skyColor);
   
+  // fuel bar display 
+  fill(255, 200, 0);
+  rect(10, 50, map(rocket.fuel, 0, rocket.maxFuel, 0, 200), 20);
+  noFill();
+  stroke(0);
+  rect(10, 50, 200, 20);
+  noStroke();
+  
   // camera follows rocket
+  let camY = 0;
+  if (rocket.y < height / 2) {
+  camY = rocket.y - height / 2; 
+  }
   push();
-  let camY = rocket.y - height/2;
-  if (camY < 0) camY = 0;
   translate(0, -camY);
   
   // ground scrolling
@@ -51,6 +69,10 @@ function draw() {
   
   // controls
   if (!gameOver) {
+    let volumeThreshold = 0.01;
+    if (!gameOver && volume > volumeThreshold) {
+      rocket.applyThrust(volume * 3);
+    }
     if (keyIsDown(LEFT_ARROW)) rocket.rotate(-1);
     if (keyIsDown(RIGHT_ARROW)) rocket.rotate(1);
     if (keyIsDown(UP_ARROW)) rocket.applyThrust();
@@ -62,6 +84,9 @@ function draw() {
   
   //restores camera
   pop();
+  
+  // count altitude
+  score = max(score, floor(altitude));
   
   // game over text 
   if (gameOver) {
@@ -76,6 +101,14 @@ function draw() {
   }
 }
 
+// functions 
+function mousePressed() {
+  if (!micStarted) {
+    mic.start();
+    micStarted = true;
+    console.log("Microphone started!");
+  }
+}
 
 // objects
 class Rocket {
@@ -92,23 +125,31 @@ class Rocket {
     this.exploded = false;
     this.explosionSize = 0;
     this.thrusting = false;
+    
+    this.fuel = 100;
+    this.maxFuel = 100;
+    this.fuelConsumption = 0.5;
   }
   // rocket rotation / vector's direction
   rotate(dir) {
     this.angle += dir * 0.05;
   }
   //accelerates in the direction of the vector
-  applyThrust() {
+  applyThrust(amount = 1) {
+    if (this.fuel <= 0) return; // no fuel no thrust
+    
     this.thrusting = true;
     this.launched = true;
     
     let correctedAngle = this.angle - PI / 2;
-    this.velocityX += cos(correctedAngle) * this.thrustStrength;
-    this.velocityY += sin(correctedAngle) * this.thrustStrength;
+    this.velocityX += cos(correctedAngle) * this.thrustStrength * amount;
+    this.velocityY += sin(correctedAngle) * this.thrustStrength * amount;
+    
+    this.fuel -=this.fuelConsumption * amount; 
+    this.fuel = max(this.fuel, 0); //prevents negative fuel
   }
   // move rocket according to velocity
   update() {
-    
     // apply velocity
     this.x += this.velocityX;
     this.y += this.velocityY;
@@ -132,7 +173,21 @@ class Rocket {
 
     this.y = groundY - 25;
     this.velocityY = 0;
-
+    
+  
+  // fuel refill
+  if (this.launched && !this.crashed) {
+    if (landingSpeed >= 4) {
+      this.exploded = true;
+      gameOver = true;
+    } else {
+      console.log("Landed safely!");
+      this.fuel = this.maxFuel; // refill fuel
+    }
+    this.crashed = true;
+  }
+  
+      
     // crash condition
     if (this.launched && !this.crashed) {
       if (landingSpeed >= 4) {
